@@ -83,12 +83,14 @@
         "files": {
           "/usr/share/metainfo/io.github.zarestia_dev.rclone-manager.metainfo.xml": "linux/flatpak.metainfo.xml"
         },
+        "postInstallScript": "linux/postinstall-gui.sh",
         "preRemoveScript": "linux/preremove-gui.sh"
       },
       "rpm": {
         "desktopTemplate": "linux/template.desktop",
         "depends": ["libappindicator"],
         "recommends": ["rclone"],
+        "postInstallScript": "linux/postinstall-gui.sh",
         "preRemoveScript": "linux/preremove-gui.sh"
       }
     },

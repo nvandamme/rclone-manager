@@ -19,6 +19,41 @@ sha256sums_aarch64=('24a448b5d5a42fc69d72de071597ee67feee5085bfb6f27f691598d5e9e
 package() {
   tar -xvf data.tar.gz -C "${pkgdir}"
   rm -f "${pkgdir}/usr/share/flatpak.metainfo.xml"
+
+  # Install a launcher wrapper that detects the NVIDIA + Wayland combo and sets the
+  # WebKitGTK env flags it needs (mirrors src-tauri/linux/postinstall-gui.sh).
+  local bin_dir="${pkgdir}/usr/bin"
+  if [ -f "${bin_dir}/rclone-manager" ]; then
+    mv "${bin_dir}/rclone-manager" "${bin_dir}/rclone-manager-bin"
+    cat > "${bin_dir}/rclone-manager" << 'WRAPPER_EOF'
+#!/bin/sh
+# RClone Manager GUI launcher script.
+# Detects the NVIDIA + Wayland combo and sets the WebKitGTK env flags it needs,
+# so users don't have to configure them manually. Respects any pre-set values.
+
+is_wayland() {
+    [ -n "$WAYLAND_DISPLAY" ] || [ "$XDG_SESSION_TYPE" = "wayland" ]
+}
+
+has_nvidia() {
+    command -v nvidia-smi >/dev/null 2>&1 && return 0
+    [ -d /proc/driver/nvidia ] && return 0
+    if command -v lspci >/dev/null 2>&1; then
+        lspci 2>/dev/null | grep -qi "nvidia" && return 0
+    fi
+    return 1
+}
+
+# Only intervene for the known-bad combination (NVIDIA + Wayland).
+if is_wayland && has_nvidia; then
+    export GDK_BACKEND="${GDK_BACKEND:-x11}"
+    export WEBKIT_DISABLE_COMPOSITING_MODE="${WEBKIT_DISABLE_COMPOSITING_MODE:-1}"
+fi
+
+exec /usr/bin/rclone-manager-bin "$@"
+WRAPPER_EOF
+    chmod +x "${bin_dir}/rclone-manager"
+  fi
 }
 post_install() {
   gtk-update-icon-cache -q -t -f usr/share/icons/hicolor
