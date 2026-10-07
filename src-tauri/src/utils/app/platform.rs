@@ -250,11 +250,13 @@ pub fn is_updater_enabled() -> bool {
 /// "Error 71" protocol errors.
 ///
 /// **Wayland + strict compositor (KWin/Plasma, Hyprland)**:
-/// Both `WEBKIT_DISABLE_DMABUF_RENDERER` and `WEBKIT_DISABLE_COMPOSITING_MODE`
-/// are set. These compositors strictly enforce the explicit-sync protocol rule,
-/// and NVIDIA's `egl-wayland2` + GTK shared-memory buffer path fails to set an
-/// acquire point, so the compositor drops the connection (Error 71). Either var
-/// alone still fails on webkit2gtk-4.1 2.54.1; both together render clean.
+/// `__NV_DISABLE_EXPLICIT_SYNC=1` is set. These compositors strictly enforce
+/// the explicit-sync protocol rule, and NVIDIA's `egl-wayland2` + GTK
+/// shared-memory buffer path fails to set an acquire point, so the compositor
+/// drops the connection (Error 71). Disabling explicit sync in the driver keeps
+/// hardware compositing intact; the `WEBKIT_*` fallbacks were verified worse on
+/// this stack (compositing-mode alone still crashes, dmabuf-disable causes
+/// invisible-unless-focused surfaces).
 ///
 /// **Wayland + tolerant compositor (niri, etc.)**: No compositing quirk. Modern
 /// drivers support DMABuf natively and these compositors accept the explicit-sync
@@ -279,16 +281,19 @@ pub fn apply_linux_graphics_quirks() {
             // protocol rule: NVIDIA's egl-wayland2 arms explicit sync on the EGL
             // surface, but GTK attaches a shared-memory buffer with no acquire
             // point, so the compositor drops the connection (Error 71). Disabling
-            // the DMABuf renderer and forcing software compositing sidesteps the
-            // EGL explicit-sync path entirely (verified: either var alone still
-            // fails on webkit2gtk-4.1 2.54.1; both together render clean).
-            if is_strict_wayland_compositor() {
-                if std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_err() {
-                    std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-                }
-                if std::env::var("WEBKIT_DISABLE_COMPOSITING_MODE").is_err() {
-                    std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-                }
+            // explicit sync in the NVIDIA driver keeps the DMABuf / hardware
+            // compositing path intact, unlike the WEBKIT_* fallbacks.
+            //
+            // Verified matrix (KWin 6.7.5, webkit2gtk-4.1 2.54.1, NVIDIA 615):
+            // - no quirk -> Error 71, app exits
+            // - WEBKIT_DISABLE_COMPOSITING_MODE=1 alone -> still Error 71
+            // - WEBKIT_DISABLE_DMABUF_RENDERER=1 (+ compositing) -> no Error 71
+            //   but surfaces turn invisible unless focused
+            // - __NV_DISABLE_EXPLICIT_SYNC=1 alone -> clean, renders correctly
+            if is_strict_wayland_compositor()
+                && std::env::var("__NV_DISABLE_EXPLICIT_SYNC").is_err()
+            {
+                std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
             }
 
             // Older drivers do not reliably support DMABuf on Wayland.
