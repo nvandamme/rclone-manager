@@ -250,10 +250,11 @@ pub fn is_updater_enabled() -> bool {
 /// "Error 71" protocol errors.
 ///
 /// **Wayland + strict compositor (KWin/Plasma, Hyprland)**:
-/// `WEBKIT_DISABLE_COMPOSITING_MODE` is set. These compositors strictly enforce
-/// the explicit-sync protocol rule, and NVIDIA's `egl-wayland2` + GTK shared-memory
-/// buffer path fails to set an acquire point, so the compositor drops the
-/// connection (Error 71). Forcing software rendering sidesteps that path.
+/// Both `WEBKIT_DISABLE_DMABUF_RENDERER` and `WEBKIT_DISABLE_COMPOSITING_MODE`
+/// are set. These compositors strictly enforce the explicit-sync protocol rule,
+/// and NVIDIA's `egl-wayland2` + GTK shared-memory buffer path fails to set an
+/// acquire point, so the compositor drops the connection (Error 71). Either var
+/// alone still fails on webkit2gtk-4.1 2.54.1; both together render clean.
 ///
 /// **Wayland + tolerant compositor (niri, etc.)**: No compositing quirk. Modern
 /// drivers support DMABuf natively and these compositors accept the explicit-sync
@@ -277,12 +278,17 @@ pub fn apply_linux_graphics_quirks() {
             // Strict compositors (KWin/Plasma, Hyprland) enforce the explicit-sync
             // protocol rule: NVIDIA's egl-wayland2 arms explicit sync on the EGL
             // surface, but GTK attaches a shared-memory buffer with no acquire
-            // point, so the compositor drops the connection (Error 71). Forcing
-            // software rendering sidesteps the EGL explicit-sync path entirely.
-            if is_strict_wayland_compositor()
-                && std::env::var("WEBKIT_DISABLE_COMPOSITING_MODE").is_err()
-            {
-                std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+            // point, so the compositor drops the connection (Error 71). Disabling
+            // the DMABuf renderer and forcing software compositing sidesteps the
+            // EGL explicit-sync path entirely (verified: either var alone still
+            // fails on webkit2gtk-4.1 2.54.1; both together render clean).
+            if is_strict_wayland_compositor() {
+                if std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_err() {
+                    std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+                }
+                if std::env::var("WEBKIT_DISABLE_COMPOSITING_MODE").is_err() {
+                    std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+                }
             }
 
             // Older drivers do not reliably support DMABuf on Wayland.
